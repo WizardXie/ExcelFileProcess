@@ -15,6 +15,7 @@
 
 # TODO:
 
+# 如果主文档中用于比较的关键字段没有数据，也应该报错
 # 提示将要从n个文档中合并数据，是否继续
 # 将参数设置调整为通过配置文件实现，而非每次运行的时候要求用户输入
 # 每次合并完成后保存成一个新的文档（文件名与合并时间关联）
@@ -25,6 +26,9 @@
 # SheetName = "Sheet1"
 import openpyxl
 import os
+import sys
+import datetime
+from shutil import copyfile
 
 ReservedRow = 1  # 工作表中保留的行数 - 通常表示表头
 ReservedColumn = 3  # 工作表中保留的列数 - 通常包括序号、姓名、编号等
@@ -36,7 +40,8 @@ def make_settings():
     prompt = "\n请设置Excel文档工作表中需要保留的行数、列数，以及进行对比的关键字段所在列："
     error_prompt = "输入有误，请重新输入!"
     while True:
-        setreservedrowvalue, setreservedcolumnvalue, setkeycolumnvalue = input(prompt).split()
+        setreservedrowvalue, setreservedcolumnvalue, setkeycolumnvalue = input(
+            prompt).split()
         try:
             setreservedrowvalue = int(setreservedrowvalue)
             setreservedcolumnvalue = int(setreservedcolumnvalue)
@@ -46,7 +51,8 @@ def make_settings():
             continue
         else:
             break
-    settings = tuple([setreservedrowvalue, setreservedcolumnvalue, setkeycolumnvalue])
+    settings = tuple(
+        [setreservedrowvalue, setreservedcolumnvalue, setkeycolumnvalue])
     return settings
 
 
@@ -59,7 +65,7 @@ def display_currentpath_info():  # 输出提示，显示当前目录中Excel文�
             fileNameList.append(fileName)
     if len(fileNameList) == 0:
         print("在当前目录中没有检测到EXCEL文档，无法继续合并操作，程序退出。")
-        exit(0)
+        exit(1)
     fileNameList.sort()
     print("在当前目录中检测到{0}个EXCEL文档：".format(len(fileNameList)))
     for index in range(1, len(fileNameList) + 1):
@@ -113,7 +119,8 @@ def check_data(fileNamelist):
                     index += 1
                     # print(index)
                 else:
-                    print("发现数据冲突！文档 {} 中的 {} 与文档 {} 中的 {} 同时存在数据！".format(filenames[result], keyvalues[result], filename, keyvalue))
+                    print("发现数据冲突！文档 {} 中的 {} 与文档 {} 中的 {} 同时存在数据！".format(
+                        filenames[result], keyvalues[result], filename, keyvalue))
                     checkresult = False
                     # print(checkresult)
         workbook_checking.close()
@@ -121,7 +128,27 @@ def check_data(fileNamelist):
         print("数据唯一性检测完成，没有发现数据冲突。")
     else:
         print("由于存在数据冲突，无法继续进行数据合并。麻烦丽霞再核对一下数据吧，程序不能再继续了")
-        exit(0)
+        exit(1)
+
+
+def make_file_bydatetime(originalFilename: str):
+    """
+    根据当前系统日期和时间，以及原有的合并文档名称，生成新的包含合并数据的新的文档名称
+    """
+    current_time = datetime.datetime.now()
+    newPostfix = str(current_time.date()) + '_' + str(
+        current_time.hour) + '-' + str(current_time.minute) + '-' + str(current_time.second)
+    newFilename = os.path.splitext(originalFilename)[
+        0] + newPostfix + os.path.splitext(originalFilename)[-1]
+    try:
+        copyfile(originalFilename, newFilename)
+    except IOError as e:
+        print("无法复制生成新的合并文档：{}。程序不能再继续了".format(e))
+        exit(1)
+    except:
+        print("未知错误：{}".format(sys.exec_info()))
+        exit(1)
+    return newFilename
 
 
 # Press the green button in the gutter to run the script.
@@ -133,9 +160,14 @@ if __name__ == '__main__':
     KeyColumn = settings_value[2]
     display_currentpath_info()
     user_choice = get_choice()
-    filenameCombine = fileNameList.pop(user_choice - 1)  # 将存放合并数据的Excel文档从列表中取出
-    check_data(fileNameList)
-    wbc = openpyxl.load_workbook(filenameCombine)  # 打开存放合并数据的Excel文档:workbook of combine
+    filenameCombine = fileNameList.pop(
+        user_choice - 1)  # 将用于存放合并数据的Excel文档从列表中取出
+    check_data(fileNameList)    # 检查剩余文档中是否存在数据冲突（如果存在则提示后退出程序）
+
+    # 根据系统日期和时间以主文档为蓝本复制生成新的合并主文档
+    filenameCombine = make_file_bydatetime(filenameCombine)
+
+    wbc = openpyxl.load_workbook(filenameCombine)
     wsc = wbc.active  # 定位到文档中的活动工作表:worksheet of combine
     keycolumnvalue = [0]
     for i in range(ReservedRow+1, wsc.max_row+1):    # 将用于比对的关键字所在列的内容添加到列表keycolumn中
@@ -152,24 +184,28 @@ if __name__ == '__main__':
                 try:
                     find_position = keycolumnvalue.index(search_value)
                 except ValueError:
-                    print("糟糕！在把文档 {0} 中的记录 {1} 合并到主文档中的时候找不到对应的记录".format(workingfilename, search_value))
+                    print("糟糕！在把文档 {0} 中的记录 {1} 合并到主文档中的时候找不到对应的记录".format(
+                        workingfilename, search_value))
                     print("麻烦丽霞再核对一下数据吧，程序不能再继续了")
-                    exit(0)
+                    exit(1)
                 else:
                     find_position += 1
                     targetRow = wsc[find_position]
                     if has_data(targetRow[ReservedColumn:wsc.max_column]):
-                        print("糟糕！在把文档 {0} 中的记录 {1} 合并到主文档中的时候发现主文档当中已有相关数据".format(workingfilename, search_value))
+                        print("糟糕！在把文档 {0} 中的记录 {1} 合并到主文档中的时候发现主文档当中已有相关数据".format(
+                            workingfilename, search_value))
                         print("麻烦丽霞再检查一下主文档吧，程序不能再继续了")
-                        exit(0)
+                        exit(1)
                     i = ReservedColumn
                     while i < ws.max_column:
-                        wsc.cell(row=find_position, column=i+1).value = currentRow[i].value
+                        wsc.cell(row=find_position, column=i +
+                                 1).value = currentRow[i].value
                         i += 1
                     count_lines += 1
         print("从 {} 中合并了 {} 条记录！".format(workingfilename, str(count_lines)))
         total_lines += count_lines
         wbc.save(filenameCombine)
         wb.close()
-    print("一共从 {} 个文档中合并了 {} 条记录。".format(str(len(fileNameList)), str(total_lines)))
-
+    wbc.close()
+    print("一共从 {} 个文档中合并了 {} 条记录。".format(
+        str(len(fileNameList)), str(total_lines)))
