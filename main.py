@@ -167,6 +167,7 @@ if __name__ == '__main__':
     # 根据系统日期和时间以主文档为蓝本复制生成新的合并主文档
     filenameCombine = make_file_bydatetime(filenameCombine)
 
+    # 打开存放合并数据的Excel文档:workbook of combine
     wbc = openpyxl.load_workbook(filenameCombine)
     wsc = wbc.active  # 定位到文档中的活动工作表:worksheet of combine
     keycolumnvalue = [0]
